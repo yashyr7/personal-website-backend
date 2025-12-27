@@ -1,4 +1,5 @@
 import os
+import json
 from typing import List, Dict
 from anyio import sleep
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -54,21 +55,51 @@ async def websocket_endpoint(websocket: WebSocket):
             # Receive message from frontend
             data = await websocket.receive_text()
 
-            # Send message to Gemini and get streaming response
-            response = chat.send_message_stream(data)
-            assistant_reply: List[str] = []
-            
-            for chunk in response:
-                if chunk.text:
-                    await sleep(0.1)  # Optional: simulate delay for streaming effect
-                    print("Sending chunk:", chunk.text)
-                    await websocket.send_text(chunk.text)
-                    assistant_reply.append(chunk.text)
-            
-            # Send a special token to indicate end of stream if needed
-            # await websocket.send_text("[DONE]")
+            try:
+                # Send message to Gemini and get streaming response
+                response = chat.send_message_stream(data)
+                assistant_reply: List[str] = []
+                
+                for chunk in response:
+                    if chunk.text:
+                        await sleep(0.1)  # Optional: simulate delay for streaming effect
+                        print("Sending chunk:", chunk.text)
+                        await websocket.send_text(chunk.text)
+                        assistant_reply.append(chunk.text)
+                
+                # Send a special token to indicate end of stream if needed
+                # await websocket.send_text("[DONE]")
+            except Exception as e:
+                error_str = str(e)
+                # Check if it's a quota/resource exhausted error
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
+                    error_message = {
+                        "type": "error",
+                        "code": "QUOTA_EXCEEDED",
+                        "message": "API quota exceeded. Please try again later.",
+                        "details": error_str
+                    }
+                else:
+                    error_message = {
+                        "type": "error",
+                        "code": "API_ERROR",
+                        "message": f"An error occurred: {error_str}",
+                        "details": error_str
+                    }
+                await websocket.send_text(json.dumps(error_message))
+                print(f"API Error: {e}")
     except WebSocketDisconnect:
         print("Client disconnected")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Unexpected error: {e}")
+        try:
+            error_message = {
+                "type": "error",
+                "code": "UNEXPECTED_ERROR",
+                "message": "An unexpected error occurred",
+                "details": str(e)
+            }
+            await websocket.send_text(json.dumps(error_message))
+        except:
+            pass
         await websocket.close()
