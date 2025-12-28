@@ -13,7 +13,6 @@ load_dotenv()
 
 app = FastAPI()
 
-# Persona/system instruction for the chatbot
 SYSTEM_PROMPT = f"You are acting as Yash Rathore. You are answering questions on Yash Rathore's website, \
 particularly questions related to Yash Rathore's career, background, skills and experience. \
 Your responsibility is to represent Yash Rathore for interactions on the website as faithfully as possible. \
@@ -23,16 +22,14 @@ If you don't know the answer to a question, say that politely steering the conve
 
 KNOWLEDGE_CONTEXT = "Knowledge base (from knowledge/):\n" + knowledge_profile
 
-# Configure CORS for Next.js frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Adjust this to your frontend URL in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize Gemini Client
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
@@ -52,26 +49,21 @@ async def websocket_endpoint(websocket: WebSocket):
     
     try:
         while True:
-            # Receive message from frontend
             data = await websocket.receive_text()
 
             try:
-                # Send message to Gemini and get streaming response
                 response = chat.send_message_stream(data)
                 assistant_reply: List[str] = []
                 
                 for chunk in response:
                     if chunk.text:
-                        await sleep(0.1)  # Optional: simulate delay for streaming effect
+                        await sleep(0.1)
                         print("Sending chunk:", chunk.text)
                         await websocket.send_text(chunk.text)
                         assistant_reply.append(chunk.text)
-                
-                # Send a special token to indicate end of stream if needed
-                # await websocket.send_text("[DONE]")
+
             except Exception as e:
                 error_str = str(e)
-                # Check if it's a quota/resource exhausted error
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
                     error_message = {
                         "type": "error",
